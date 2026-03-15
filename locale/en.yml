@@ -1,0 +1,8 @@
+resofire_blog_cards:
+  forum:
+    replies: "Replies: {count}"
+    unreadReplies: "Unread replies: {count}"
+  admin:
+    settings:
+      onIndexPage_label: "Use on Discussion List"
+      onIndexPage_help: "If enabled, the discussion list page will display cards."
