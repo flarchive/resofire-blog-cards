@@ -1,0 +1,30 @@
+{
+    "name": "resofire/blog-cards",
+    "description": "Display the discussion list as blog-style cards",
+    "type": "flarum-extension",
+    "keywords": ["flarum", "extension", "discussion", "cards", "blog"],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Resofire"
+        }
+    ],
+    "require": {
+        "flarum/core": "^1.0",
+        "flarum/tags": "^1.0"
+    },
+    "extra": {
+        "flarum-extension": {
+            "title": "Blog Cards",
+            "category": "feature",
+            "icon": {
+                "name": "fas fa-border-all",
+                "backgroundColor": "#008e97",
+                "color": "#fff"
+            }
+        }
+    },
+    "support": {
+        "issues": "https://github.com/resofire/blog-cards/issues"
+    }
+}
