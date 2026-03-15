@@ -1,0 +1,133 @@
+import app from 'flarum/forum/app';
+import { extend, override } from 'flarum/extend';
+import DiscussionList from 'flarum/forum/components/DiscussionList';
+import DiscussionListState from 'flarum/forum/states/DiscussionListState';
+import ReplyComposer from 'flarum/forum/components/ReplyComposer';
+import IndexPage from 'flarum/forum/components/IndexPage';
+import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
+import Placeholder from 'flarum/common/components/Placeholder';
+import Button from 'flarum/common/components/Button';
+import CardItem from './components/CardItem';
+import checkOverflowingTags from './helpers/checkOverflowingTags';
+import extCompat from './compat';
+import { compat } from '@flarum/core/forum';
+
+app.initializers.add('resofire/blog-cards', () => {
+
+  extend(DiscussionList.prototype, 'oncreate', checkOverflowingTags);
+  extend(DiscussionList.prototype, 'onupdate', checkOverflowingTags);
+
+  // Include participantPreview on every load-more fetch
+  extend(DiscussionListState.prototype, 'requestParams', function(params) {
+    params.include.push('participantPreview');
+  });
+
+  override(DiscussionList.prototype, 'view', function (original) {
+    const onIndexPage = Number(app.forum.attribute('resofireBlogCardsOnIndexPage')) === 1;
+    const isIndex = app.current.matches(IndexPage);
+    const state = this.attrs.state;
+    let loading;
+
+    if (state.isInitialLoading() || state.isLoadingNext()) {
+      loading = <LoadingIndicator />;
+    } else if (state.hasNext()) {
+      loading = Button.component(
+        {
+          className: 'Button',
+          onclick: state.loadNext.bind(state),
+        },
+        app.translator.trans('core.forum.discussion_list.load_more_button')
+      );
+    }
+
+    if (state.isEmpty()) {
+      const text = app.translator.trans('core.forum.discussion_list.empty_text');
+      return <div className="DiscussionList">{m(Placeholder, { text })}</div>;
+    }
+
+    const isTagPage = isIndex && !!m.route.param('tags');
+    const isMainIndex = isIndex && !m.route.param('tags');
+
+    if (isMainIndex && !onIndexPage) return original();
+
+    const configuredTagIds = JSON.parse(app.forum.attribute('resofireBlogCardsTagIds') || '[]');
+    if (configuredTagIds.length > 0 && isTagPage) {
+      const currentSlug = m.route.param('tags');
+      const currentTag = app.store.all('tags').find(
+        (t) => t.slug().localeCompare(currentSlug, undefined, { sensitivity: 'base' }) === 0
+      );
+      if (!currentTag || !configuredTagIds.includes(currentTag.id())) {
+        return original();
+      }
+    }
+
+    const fullWidth = Number(app.forum.attribute('resofireBlogCardsFullWidth')) === 1;
+
+    return (
+      <div className={'DiscussionList' + (state.isSearchResults() ? ' DiscussionList--searchResults' : '')}>
+        <div className={'DiscussionList-discussions flexCard' + (fullWidth ? ' flexCard--full' : '')}>
+          {state.getPages().map((pg) => {
+            return pg.items.map((discussion) => {
+              return m(CardItem, { discussion });
+            });
+          })}
+        </div>
+        <div className="DiscussionList-loadMore">{loading}</div>
+      </div>
+    );
+  });
+
+  // Optimistic avatar append after replying — copied exactly from discussion-participants
+  override(ReplyComposer.prototype, 'onsubmit', function(original) {
+    const discussion = this.attrs.discussion;
+    const discussionId = String(discussion.id());
+    const currentUser = app.session.user;
+
+    if (!currentUser) {
+      original();
+      return;
+    }
+
+    const currentUserId = String(currentUser.id());
+    const originalCreateRecord = app.store.createRecord.bind(app.store);
+
+    app.store.createRecord = function(type, data) {
+      app.store.createRecord = originalCreateRecord;
+      const record = originalCreateRecord(type, data);
+
+      if (type === 'posts') {
+        const originalSave = record.save.bind(record);
+        record.save = function(saveData) {
+          return originalSave(saveData).then(function(post) {
+            const disc = app.store.getById('discussions', discussionId);
+            if (!disc) return post;
+
+            const preview = (disc.participantPreview() || []).filter(Boolean);
+            if (preview.length >= 6) return post;
+
+            const alreadyIn = preview.some((u) => String(u.id()) === currentUserId);
+            if (alreadyIn) return post;
+
+            const rel = disc.data.relationships = disc.data.relationships || {};
+            rel.participantPreview = rel.participantPreview || { data: [] };
+            if (!Array.isArray(rel.participantPreview.data)) {
+              rel.participantPreview.data = [];
+            }
+            rel.participantPreview.data.push({ type: 'users', id: currentUserId });
+            disc.freshness = new Date();
+            m.redraw();
+
+            return post;
+          });
+        };
+      }
+
+      return record;
+    };
+
+    original();
+  });
+
+}, -1);
+
+Object.assign(compat, extCompat);
